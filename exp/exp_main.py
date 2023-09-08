@@ -96,7 +96,7 @@ class Exp_Main(Exp_Basic):
                 loss = criterion(pred, true)
                 
                 #TODO verify this logic and reenable. 
-                vali_num_infeasibles = (loss > self.args.constraint_level).sum()
+                vali_num_infeasibles = (loss > self.args.constraint_level+perturbation).sum()
                 #vali_infeasible_rate = vali_num_infeasibles / self.args.pred_len
 
                 #print(f"Number of infeasibilities: {vali_num_infeasibles}/{self.args.pred_len} rate {vali_infeasible_rate}")
@@ -122,6 +122,7 @@ class Exp_Main(Exp_Basic):
         vali_data, vali_loader = self._get_data(flag='val')
         test_data, test_loader = self._get_data(flag='test')
         multipliers = torch.ones(self.args.pred_len, device=self.device)*self.args.dual_init
+        perturbation = 0
         path = os.path.join(self.args.checkpoints, setting)
         if not os.path.exists(path):
             os.makedirs(path)
@@ -194,7 +195,9 @@ class Exp_Main(Exp_Basic):
                     #loss = (loss_all*multipliers).sum() #old loss
                     loss = ((multipliers + 1/self.args.pred_len) * loss_all).sum()
                     if self.args.dual_lr>0:
-                        multipliers = (multipliers+self.args.dual_lr*(loss_all.detach()-self.args.constraint_level)).clamp(min=0.)
+                        multipliers = (multipliers+self.args.dual_lr*(loss_all.detach()-self.args.constraint_level-perturbation)).clamp(min=0.)
+                    if self.args.resilient_lr>0:
+                        perturbation = (perturbation+self.args.resilient_lr*(self.args.resilient_alpha*self.args.resilient_beta*(perturbation**(self.args.resilient_beta-1.0))-multipliers))#.clamp(min=0.)
                 if (i + 1) % 100 == 0:
                     print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
                     speed = (time.time() - time_now) / iter_count
@@ -215,7 +218,7 @@ class Exp_Main(Exp_Basic):
                     #TODO address duplicates between this and end of epoch.
                     # Calculating how many violate feasibility
                     # TODO WARNING this will only work in the constant case.
-                    train_num_infeasibles = (loss_all > self.args.constraint_level).sum()
+                    train_num_infeasibles = (loss_all > self.args.constraint_level+perturbation).sum()
                     train_infeasible_rate = train_num_infeasibles / self.args.pred_len
 
                     print(f"Number of infeasibilities: {train_num_infeasibles}/{self.args.pred_len} rate {train_infeasible_rate}")
@@ -280,7 +283,7 @@ class Exp_Main(Exp_Basic):
             train_losses = np.stack(train_losses)
             train_losses = np.average(train_losses, axis=0) #This is losses per step
 
-            train_num_infeasibles = (loss_all > self.args.constraint_level).sum()
+            train_num_infeasibles = (loss_all > self.args.constraint_level+perturbation).sum()
             train_infeasible_rate = train_num_infeasibles / self.args.pred_len
 
             print(f"Number of infeasibilities: {train_num_infeasibles}/{self.args.pred_len} rate {train_infeasible_rate}")
@@ -308,6 +311,9 @@ class Exp_Main(Exp_Basic):
 
             for i, multiplier in enumerate(multipliers):
                 wandb.log({f"multiplier/{i}": multiplier, "epoch":epoch+1},commit=False)
+            
+            if self.resilient_lr>0:
+                wandb.log({f"perturbation": perturbation, "epoch":epoch+1},commit=False)
 
             early_stopping(vali_loss, self.model, path) #must keep this even if we don't early stop, to save best model.
             if early_stopping.early_stop and not early_stopped_before:

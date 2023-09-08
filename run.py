@@ -88,7 +88,12 @@ def main():
     # Constrained
     parser.add_argument('--constraint_level', type=float, help='Constraint level (epsilon)')    
     parser.add_argument('--dual_lr',  type=float, help='dual learning rate')
-    parser.add_argument('--dual_init',  type=float, help='dual var initialization')
+    parser.add_argument('--dual_init',  type=float, default=0.0, help='dual var initialization')
+
+    # Resilient
+    parser.add_argument('--resilient_alpha', type=float, default=2.0, help='Perturbation cost scale')    
+    parser.add_argument('--resilient_beta',  type=float, default=2.0, help='Perturbation cost exponent')
+    parser.add_argument('--resilient_lr',  type=float, default=1.0, help='dual var initialization')
     args = parser.parse_args()
 
     if args.seed==0:
