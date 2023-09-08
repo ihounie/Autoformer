@@ -53,7 +53,7 @@ class Exp_Main(Exp_Basic):
         #criterion = nn.MSELoss()
         return lambda x, y: ((x-y)**2).mean(dim=(0, 2))#criterion
 
-    def vali(self, vali_data, vali_loader, criterion):
+    def vali(self, vali_data, vali_loader, criterion, perturbation=0):
         "Javier: this returns overall mean loss, average losses per step, and overall average metrics."
         total_loss = []
         total_losses = []
@@ -197,7 +197,10 @@ class Exp_Main(Exp_Basic):
                     if self.args.dual_lr>0:
                         multipliers = (multipliers+self.args.dual_lr*(loss_all.detach()-self.args.constraint_level-perturbation)).clamp(min=0.)
                     if self.args.resilient_lr>0:
-                        perturbation = (perturbation+self.args.resilient_lr*(self.args.resilient_alpha*self.args.resilient_beta*(perturbation**(self.args.resilient_beta-1.0))-multipliers))#.clamp(min=0.)
+                        #print(f"perturbation: {perturbation}")
+                        #print(f"multiplier cost gradient: {multipliers.sum()}")
+                        #print(f"pertutbation cost gradient: {self.args.resilient_alpha*self.args.resilient_beta*(perturbation**(self.args.resilient_beta-1.0))}")
+                        perturbation = (perturbation-self.args.resilient_lr*(self.args.resilient_alpha*self.args.resilient_beta*(perturbation**(self.args.resilient_beta-1.0))-multipliers.sum())).clamp(min=0.).item()
                 if (i + 1) % 100 == 0:
                     print("\titers: {0}, epoch: {1} | loss: {2:.7f}".format(i + 1, epoch + 1, loss.item()))
                     speed = (time.time() - time_now) / iter_count
@@ -222,10 +225,11 @@ class Exp_Main(Exp_Basic):
                     train_infeasible_rate = train_num_infeasibles / self.args.pred_len
 
                     print(f"Number of infeasibilities: {train_num_infeasibles}/{self.args.pred_len} rate {train_infeasible_rate}")
+                    print(f"Perturbation: {perturbation}")
 
                     #Run validation set
-                    vali_loss, vali_losses, val_metrics, val_infeasibilities, val_avg_infeasiblity_rate = self.vali(vali_data, vali_loader, criterion)
-                    test_loss, test_losses, test_metrics, test_infeasibilities, test_avg_infeasiblity_rate= self.vali(test_data, test_loader, criterion)
+                    vali_loss, vali_losses, val_metrics, val_infeasibilities, val_avg_infeasiblity_rate = self.vali(vali_data, vali_loader, criterion, perturbation)
+                    test_loss, test_losses, test_metrics, test_infeasibilities, test_avg_infeasiblity_rate= self.vali(test_data, test_loader, criterion, perturbation)
 
                     val_mae, _, val_rmse, val_mape, val_mspe = val_metrics
                     test_mae, _, test_rmse, test_mape, test_mspe = test_metrics
@@ -287,7 +291,7 @@ class Exp_Main(Exp_Basic):
             train_infeasible_rate = train_num_infeasibles / self.args.pred_len
 
             print(f"Number of infeasibilities: {train_num_infeasibles}/{self.args.pred_len} rate {train_infeasible_rate}")
-
+            print(f"Perturbation: {perturbation}")
             # Run validation again for end of epoch logging
             vali_loss, vali_losses, val_metrics, val_infeasibilities, val_avg_infeasiblity_rate = self.vali(vali_data, vali_loader, criterion)
             test_loss, test_losses, test_metrics, test_infeasibilities, test_avg_infeasiblity_rate= self.vali(test_data, test_loader, criterion)
