@@ -17,7 +17,7 @@ do
           --root_path ./dataset/weather/ \
           --data_path weather.csv \
           --model_id weather_96_192 \
-          --model Autoformer \
+          --model Reformer \
           --data custom \
           --features M \
           --seq_len 96 \
