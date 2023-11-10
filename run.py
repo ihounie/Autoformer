@@ -122,7 +122,7 @@ def main():
     print('Args in experiment:')
     print(args)
     run_name = f"{args.wandb_run}/{args.data_path}_{args.model}_len{args.pred_len}"
-    wandb.init(name=run_name, project=args.wandb_project, config=args,tags=[args.experiment_tag])
+    wandb.init(name=run_name, project=args.wandb_project, entity="alelab", config=args,tags=[args.experiment_tag])
 
     Exp = Exp_Main
 

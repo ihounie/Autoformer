@@ -316,7 +316,7 @@ class Exp_Main(Exp_Basic):
             for i, multiplier in enumerate(multipliers):
                 wandb.log({f"multiplier/{i}": multiplier, "epoch":epoch+1},commit=False)
             
-            if self.resilient_lr>0:
+            if self.args.resilient_lr>0:
                 wandb.log({f"perturbation": perturbation, "epoch":epoch+1},commit=False)
 
             early_stopping(vali_loss, self.model, path) #must keep this even if we don't early stop, to save best model.
