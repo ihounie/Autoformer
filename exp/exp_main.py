@@ -64,7 +64,7 @@ class Exp_Main(Exp_Basic):
         # Setting vector of constraints if running linear or constant constrained.
         device = self.device
         if self.args.constraint_type == "static_linear" or self.args.constraint_type == "dynamic_linear":
-            constraint_levels = (torch.arange(self.args.pred_len)*self.args.constraint_slope+ self.args.constraint_offset).to(device)
+            constraint_levels = (torch.arange(self.args.pred_len-(self.args.constraint_type == "monotonic"))*self.args.constraint_slope+ self.args.constraint_offset).to(device)
         elif self.args.constraint_type == "constant":
             #TODO run and test that dimensions match the above.
             constraint_levels = (torch.ones(self.args.pred_len, device=device)*self.args.constraint_level).to(device)
@@ -85,7 +85,7 @@ class Exp_Main(Exp_Basic):
         test_data, test_loader = self._get_data(flag='test')
 
         # Initializing multipliers for constraint optimization
-        multipliers = torch.ones(self.args.pred_len, device=self.device)*self.args.dual_init
+        multipliers = torch.ones(self.args.pred_len-(self.args.constraint_type == "monotonic"), device=self.device)*self.args.dual_init
         
         # Setting vector of constraints if running linear or constant constrained.
         constraint_levels = self._create_constraint_levels_tensor()
@@ -172,6 +172,13 @@ class Exp_Main(Exp_Basic):
                             multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
                         #TODO uncomment for dual restarts.
                         #multipliers = multipliers * (raw_loss > constraint_levels).float()
+                    elif self.args.constraint_type == "monotonic":
+                        constrained_loss = ((multipliers[:-1] + multipliers[1:] - 1/self.args.pred_len) * raw_loss[1:-1]).sum()
+                        constrained_loss += (1/self.args.pred_len+multipliers[0]) * raw_loss[0] 
+                        constrained_loss += (1/self.args.pred_len-multipliers[-1]) * raw_loss[-1]
+                        if not self.args.dual_update_per_epoch:
+                            multipliers += self.args.dual_lr * (detached_raw_loss[:-1]-detached_raw_loss[1:]-constraint_levels)
+                            multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
                     elif self.args.constraint_type == "dynamic_linear":
                         raise NotImplementedError("dynamic_linear constraint not implemented yet.")
                     elif self.args.constraint_type == "resilience":
@@ -288,17 +295,27 @@ class Exp_Main(Exp_Basic):
             print(f"Number of infeasibilities: {train_num_infeasibles}/{self.args.pred_len} rate {train_infeasible_rate}")
 
             if self.args.dual_update_per_epoch and not self.args.dual_update_use_val:
-                train_losses = self.vali(train_data, train_loader, criterion)[1]
-                multipliers += (self.args.dual_lr * i * (torch.tensor(train_losses, device=multipliers.device) - constraint_levels))
-                multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
+                if self.args.constraint_type == "constant" or self.args.constraint_type == "static_linear":
+                    train_losses = self.vali(train_data, train_loader, criterion)[1]
+                    multipliers += (self.args.dual_lr * i * (torch.tensor(train_losses, device=multipliers.device) - constraint_levels))
+                    multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
+                elif self.args.constraint_type == "monotonic":
+                    losses = torch.tensor(train_losses, device=multipliers.device)
+                    multipliers += self.args.dual_lr*i*(losses[:-1]-losses[1:]-constraint_levels)
+                    multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
                  
 
             #Run validation set again for epoch logging. TODO remove code duplication.
             vali_loss, vali_losses, val_metrics, val_infeasibilities, val_avg_infeasiblity_rate, val_loss_distr_metrics, val_loss_distr_metrics_per_timestep = self.vali(vali_data, vali_loader, criterion)
 
             if self.args.dual_update_per_epoch and self.args.dual_update_use_val:
-                multipliers += (self.args.dual_lr * i * (torch.tensor(vali_losses, device=multipliers.device) - constraint_levels))
-                multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
+                if self.args.constraint_type == "constant" or self.args.constraint_type == "static_linear":
+                    multipliers += (self.args.dual_lr * i * (torch.tensor(vali_losses, device=multipliers.device) - constraint_levels))
+                    multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
+                elif self.args.constraint_type == "monotonic":
+                    losses = torch.tensor(vali_losses, device=multipliers.device)
+                    multipliers += self.args.dual_lr*i*(losses[:-1]-losses[1:]-constraint_levels)
+                    multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
             
             # Append /val to the val_loss_distr_metrics
             val_loss_distr_metrics = self._rename_dict(val_loss_distr_metrics, "val")
