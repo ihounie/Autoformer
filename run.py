@@ -98,6 +98,8 @@ def main():
     parser.add_argument('--dual_lr',  type=float, help='dual learning rate')
     parser.add_argument('--dual_init',  type=float, help='dual var initialization')
     parser.add_argument('--dual_clip',  type=float, default=10.0, help='clip dual variables')
+    parser.add_argument('--dual_update_per_epoch',  action='store_true', default=False, help='Update dual variables once per epoch')
+    parser.add_argument('--dual_update_use_val',  action='store_true', default=False, help='Update dual variables using validation data')
 
     # PatchTST
     parser.add_argument('--fc_dropout', type=float, default=0.05, help='fully connected dropout')

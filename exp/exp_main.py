@@ -167,8 +167,9 @@ class Exp_Main(Exp_Basic):
                         constrained_loss = raw_loss.mean()
                     elif self.args.constraint_type == "constant" or self.args.constraint_type == "static_linear":
                         constrained_loss = ((multipliers + 1/self.args.pred_len) * raw_loss).sum()
-                        multipliers += (self.args.dual_lr * (detached_raw_loss - constraint_levels))
-                        multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
+                        if not self.args.dual_update_per_epoch:
+                            multipliers += (self.args.dual_lr * (detached_raw_loss - constraint_levels))
+                            multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
                         #TODO uncomment for dual restarts.
                         #multipliers = multipliers * (raw_loss > constraint_levels).float()
                     elif self.args.constraint_type == "dynamic_linear":
@@ -286,8 +287,18 @@ class Exp_Main(Exp_Basic):
 
             print(f"Number of infeasibilities: {train_num_infeasibles}/{self.args.pred_len} rate {train_infeasible_rate}")
 
+            if self.args.dual_update_per_epoch and not self.args.dual_update_use_val:
+                train_losses = self.vali(train_data, train_loader, criterion)[1]
+                multipliers += (self.args.dual_lr * i * (torch.tensor(train_losses, device=multipliers.device) - constraint_levels))
+                multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
+                 
+
             #Run validation set again for epoch logging. TODO remove code duplication.
             vali_loss, vali_losses, val_metrics, val_infeasibilities, val_avg_infeasiblity_rate, val_loss_distr_metrics, val_loss_distr_metrics_per_timestep = self.vali(vali_data, vali_loader, criterion)
+
+            if self.args.dual_update_per_epoch and self.args.dual_update_use_val:
+                multipliers += (self.args.dual_lr * i * (torch.tensor(vali_losses, device=multipliers.device) - constraint_levels))
+                multipliers = torch.clip(multipliers, 0.0, self.args.dual_clip)
             
             # Append /val to the val_loss_distr_metrics
             val_loss_distr_metrics = self._rename_dict(val_loss_distr_metrics, "val")
